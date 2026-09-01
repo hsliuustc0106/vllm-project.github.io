@@ -227,6 +227,22 @@ resident-layer count, and request concurrency.
 the [dedicated DLO article](https://vllm.ai/blog/2026-08-17-distributed-layerwise-offload)
 for the mechanism and deployment trade-offs.*
 
+#### 8× B300 BF16 DLO Pareto frontier
+
+On the official BF16 MiniMax-H3 FL2VA checkpoint (5.175 s, 1344×768,
+SP8/Ulysses8/Ring1/DP1/TP1, AllGather, CUDNN attention), the first request is
+excluded for lazy CUDA/cuDNN/JIT work and the remaining two requests are
+averaged. The generated video and audio have the expected output shapes.
+
+<p align="center">
+  <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/b300-dlo-pareto.svg" alt="Scatter plot of B300 DLO steady latency against engine-reported HBM. The non-dominated policies are no offload, then 50, 35, 30, and 0 leading DiT blocks resident; 40, 20, and 10 resident blocks are dominated." width="100%">
+</p>
+
+*Figure 3: Latency–memory Pareto frontier. <em>r</em> is the number of resident
+DiT blocks. Filled points are non-dominated measurements; open points are
+dominated. At <em>r</em> = 35, DLO lowers reported HBM by 37.5% for a 5.1%
+latency cost; <em>r</em> = 0 is the minimum-memory endpoint.*
+
 ### 4.2 Disaggregated encoding
 
 H3 retains approximately 51.5 GB of Qwen3-VL encoder weights in BF16. The
@@ -240,7 +256,7 @@ original media before the DiT/VAE stage.
   <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/h3-encoder-disaggregation.svg" alt="MiniMax H3 request flow through independently scaled encoder and diffusion stages" width="100%">
 </p>
 
-*Figure 3: Encoder and diffusion capacity scale independently. The merged
+*Figure 4: Encoder and diffusion capacity scale independently. The merged
 single-node recipe returns conditioning through the orchestrator and keeps the
 diffusion stage inline; it does not configure OmniConnector. SHM/RDMA remains a
 future cross-node option in [RFC #5707](https://github.com/vllm-project/vllm-omni/issues/5707).*
@@ -269,7 +285,7 @@ runtime gain.
   <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/h3-quantization-paths.svg" alt="Comparison of online FP8 and offline SVDQuant W4A4 execution paths for MiniMax H3" width="100%">
 </p>
 
-*Figure 4: Online FP8 creates FP8 weights and scales at load time, then
+*Figure 5: Online FP8 creates FP8 weights and scales at load time, then
 quantizes eligible activations online. Offline SVDQuant combines an NVFP4 W4A4
 base branch with a BF16 low-rank correction. Sources: vLLM-Omni
 [#5910](https://github.com/vllm-project/vllm-omni/pull/5910) and
@@ -281,6 +297,25 @@ explainers.*
 A quantized profile must report peak HBM, startup host RAM, checkpoint storage,
 latency, and same-seed video/audio quality. A capacity win is not automatically
 a latency win, and loader correctness is not evidence of a fused-kernel gain.
+
+#### B300 Online FP8 capacity and latency
+
+The following dense, resident result isolates Online FP8 from the released BF16
+checkpoint. Both rows use 8 B300 GPUs, Ulysses8/Ring1 with Fast Ulysses, encoder
+TP8, VAE PP8 tile decode, CUDNN attention, and the 10-second 1344×768 / 24 FPS
+request with 50 requested sigma points (49 DiT forwards). One warmup is
+excluded; each value is the mean of three measured requests. “Stage generation”
+is the native diffusion-stage timer; E2E is offline client wall time through
+returned video and audio tensors, excluding MP4 muxing.
+
+| Weights | Stage generation (mean, n=3) | E2E (mean, n=3) | Peak HBM / rank | Result |
+|---|---:|---:|---:|---|
+| BF16 | 52.572 s | 53.118 s | 87.16 GiB | Lossless baseline |
+| Online FP8 | **49.769 s** | **50.331 s** | **53.27 GiB** | 5.3% lower stage time; 38.9% lower peak HBM |
+
+Every measured request returned 243 RGB frames at 1344×768 and 32 kHz stereo
+audio. Distinct seeds across the three repetitions establish output shape and
+successful generation, not pixelwise equivalence to BF16.
 
 #### Approximate attention and cache policies
 
@@ -346,7 +381,7 @@ sharding rather than activating it per request.
   <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/h3-few-step-adapters.svg" alt="Comparison of request-switchable Turbo LoRA and load-time-fused FastVideo FastH3" width="100%">
 </p>
 
-*Figure 5: Turbo leaves base weights unchanged and applies request-selected A/B
+*Figure 6: Turbo leaves base weights unchanged and applies request-selected A/B
 sidecars. FastH3 fuses low-rank and full-rank changes into a dedicated student
 before sharding. Sources: Turbo [#6476](https://github.com/vllm-project/vllm-omni/pull/6476),
 DLO support [#6550](https://github.com/vllm-project/vllm-omni/pull/6550), and
