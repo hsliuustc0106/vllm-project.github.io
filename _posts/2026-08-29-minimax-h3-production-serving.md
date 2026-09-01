@@ -224,6 +224,22 @@ resident-layer count, and request concurrency.
 the [dedicated DLO article](https://vllm.ai/blog/2026-08-17-distributed-layerwise-offload)
 for the mechanism and deployment trade-offs.*
 
+#### 8× B300 BF16 DLO Pareto frontier
+
+On the official BF16 MiniMax-H3 FL2VA checkpoint (5.175 s, 1344×768,
+SP8/Ulysses8/Ring1/DP1/TP1, AllGather, CUDNN attention), the first request is
+excluded for lazy CUDA/cuDNN/JIT work and the remaining two requests are
+averaged. The generated video and audio have the expected output shapes.
+
+<p align="center">
+  <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/b300-dlo-pareto.svg" alt="Scatter plot of B300 DLO steady latency against engine-reported HBM. The non-dominated policies are no offload, then 50, 35, 30, and 0 leading DiT blocks resident; 40, 20, and 10 resident blocks are dominated." width="100%">
+</p>
+
+*Figure 3: Blue points are non-dominated policies; gray points use more memory
+and take at least as long as another measured policy. At 35 resident DiT
+blocks, DLO lowers reported HBM by 37.5% for a 5.1% latency cost; zero resident
+blocks is the minimum-memory endpoint.*
+
 ### 4.2 Disaggregated encoding
 
 H3 retains approximately 51.5 GB of Qwen3-VL encoder weights in BF16. The
@@ -237,7 +253,7 @@ original media before the DiT/VAE stage.
   <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/h3-encoder-disaggregation.svg" alt="MiniMax H3 request flow through independently scaled encoder and diffusion stages" width="100%">
 </p>
 
-*Figure 3: Encoder and diffusion capacity scale independently. The merged
+*Figure 4: Encoder and diffusion capacity scale independently. The merged
 single-node recipe returns conditioning through the orchestrator and keeps the
 diffusion stage inline; it does not configure OmniConnector. SHM/RDMA remains a
 future cross-node option in [RFC #5707](https://github.com/vllm-project/vllm-omni/issues/5707).*
