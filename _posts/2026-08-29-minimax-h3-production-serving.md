@@ -542,6 +542,26 @@ These paths are useful but are not part of the main FastH3 result:
 | [Sol-Attn](https://github.com/vllm-project/vllm-omni/pull/5851) | Sparse H3 attention preview | Requires hardware-specific dense guards and quality gates |
 | [Cache-DiT](https://github.com/vllm-project/vllm-omni/pull/5853) | Request quality policy that skips cached work | Needs deployment-specific hit-rate and quality evidence |
 
+#### B300 Online FP8 capacity and latency
+
+The following dense, resident result isolates the Online FP8 weight policy from
+the released BF16 checkpoint. Both rows use 8 B300 GPUs, Ulysses8/Ring1 with
+Fast Ulysses, encoder TP8, VAE PP8 tile decode, CUDNN attention, and the
+10-second 1344×768 / 24 FPS request with 50 requested sigma points (49 DiT
+forwards). One warmup is excluded; each value is the mean of three measured
+requests. “Stage generation” is the native diffusion-stage timer, while E2E is
+the offline client wall time through returned video and audio tensors, excluding
+MP4 muxing.
+
+| Weights | Stage generation (mean, n=3) | E2E (mean, n=3) | Peak HBM / rank | Result |
+|---|---:|---:|---:|---|
+| BF16 | 52.572 s | 53.118 s | 87.16 GiB | Lossless baseline |
+| Online FP8 | **49.769 s** | **50.331 s** | **53.27 GiB** | 5.3% lower stage time; 38.9% lower peak HBM |
+
+Every measured request returned 243 RGB frames at 1344×768 and 32 kHz stereo
+audio. The three repetitions use distinct seeds, so this establishes output
+shape and successful generation, not pixelwise equivalence to BF16.
+
 On the canonical B300 base-H3 workload, optional `TRTLLM_ATTN` approximations
 produce the following model-execution results:
 
