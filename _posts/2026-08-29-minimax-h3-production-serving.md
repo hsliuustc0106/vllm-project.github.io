@@ -235,10 +235,10 @@ averaged. The generated video and audio have the expected output shapes.
   <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/b300-dlo-pareto.svg" alt="Scatter plot of B300 DLO steady latency against engine-reported HBM. The non-dominated policies are no offload, then 50, 35, 30, and 0 leading DiT blocks resident; 40, 20, and 10 resident blocks are dominated." width="100%">
 </p>
 
-*Figure 3: Blue points are non-dominated policies; gray points use more memory
-and take at least as long as another measured policy. At 35 resident DiT
-blocks, DLO lowers reported HBM by 37.5% for a 5.1% latency cost; zero resident
-blocks is the minimum-memory endpoint.*
+*Figure 3: Latency–memory Pareto frontier. <em>r</em> is the number of resident
+DiT blocks. Filled points are non-dominated measurements; open points are
+dominated. At <em>r</em> = 35, DLO lowers reported HBM by 37.5% for a 5.1%
+latency cost; <em>r</em> = 0 is the minimum-memory endpoint.*
 
 ### 4.2 Disaggregated encoding
 
@@ -297,7 +297,7 @@ sharding rather than activating it per request.
   <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/h3-few-step-adapters.svg" alt="Comparison of request-switchable Turbo LoRA and load-time-fused FastVideo FastH3" width="100%">
 </p>
 
-*Figure 4: Turbo leaves base weights unchanged and applies request-selected A/B
+*Figure 5: Turbo leaves base weights unchanged and applies request-selected A/B
 sidecars. FastH3 fuses low-rank and full-rank changes into a dedicated student
 before sharding. Sources: Turbo [#6476](https://github.com/vllm-project/vllm-omni/pull/6476),
 DLO support [#6550](https://github.com/vllm-project/vllm-omni/pull/6550), and
