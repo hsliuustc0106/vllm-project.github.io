@@ -152,7 +152,8 @@ The 49-forward loop repeatedly applies small operations around its matrix
 multiplications. vLLM-Omni fuses Q/K RMSNorm with RoPE
 ([#5990](https://github.com/vllm-project/vllm-omni/pull/5990)), combines FP32
 modulation, normalization, and residual work
-([#6281](https://github.com/vllm-project/vllm-omni/pull/6281)), and replaces
+([#6281](https://github.com/vllm-project/vllm-omni/pull/6281),
+[#6878](https://github.com/vllm-project/vllm-omni/pull/6878)), and replaces
 separate SiLU and multiply launches with fused SwiGLU
 ([#6283](https://github.com/vllm-project/vllm-omni/pull/6283)).
 
@@ -317,29 +318,43 @@ Every measured request returned 243 RGB frames at 1344×768 and 32 kHz stereo
 audio. Distinct seeds across the three repetitions establish output shape and
 successful generation, not pixelwise equivalence to BF16.
 
-#### Approximate attention and cache policies
+#### Quantized and Sparse Attention
 
 On the canonical B300 base-H3 workload, `TRTLLM_ATTN` provides optional SAGE
 FP8 and Skip-Softmax paths. SAGE quantizes QK and PV attention work; Skip-Softmax
-uses the QK result to omit selected Softmax and PV computation. The measurements
-below change the attention policy while retaining the same model-execution
-boundary:
+uses the QK result to omit selected Softmax and PV computation. The following
+table compares them with dense TRTLLM attention on the same B300 workload:
+
+<p align="center">
+  <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/trtllm-sage-skip-softmax.jpg" alt="SAGE FP8 QK and PV paths around the BLASST Skip-Softmax main loop" width="100%">
+</p>
+
+*Figure 6: SAGE quantizes Q, K, P, and V to FP8 for Q×K and P×V, while
+Skip-Softmax uses the [BLASST](https://arxiv.org/abs/2512.12087) tile-level
+decision to bypass selected Softmax and P×V tiles.*
 
 | Attention policy | SAGE configuration | Skip-Softmax configuration | Model execution | Speedup | LPIPS vs. dense | Sample |
 |---|---|---|---:|---:|---:|---|
 | Dense TRTLLM | Off | Off | 54.246 s | 1.000x | 0 | [Video](/assets/figures/2026-08-29-minimax-h3-production-serving/evidence/b300/trtllm_dense.mp4) |
-| SAGE FP8 | `dtype_qk=fp8_e4m3`, blocks 1/4 | Off | 46.592 s | **1.164x** | 0.4093 | [Video](/assets/figures/2026-08-29-minimax-h3-production-serving/evidence/b300/sage_fp8.mp4) |
+| SAGE FP8 | `dtype_qk=fp8_e4m3`, `q_block_size=1`, `k_block_size=16` | Off | 44.787 s | **1.211x** | 0.3697 | [Video](/assets/figures/2026-08-29-minimax-h3-production-serving/evidence/b300/sage_fp8.mp4) |
 | Skip-Softmax | Off | threshold 0.05; disabled until 0.97 | 50.029 s | **1.084x** | 0.0917 | [Video](/assets/figures/2026-08-29-minimax-h3-production-serving/evidence/b300/skip_softmax_005_gate097.mp4) |
-| SAGE + Skip-Softmax | `dtype_qk=fp8_e4m3`, blocks 1/4 | threshold 0.05; disabled until 0.97 | 46.073 s | **1.177x** | 0.4103 | [Video](/assets/figures/2026-08-29-minimax-h3-production-serving/evidence/b300/sage_fp8_skip_005_gate097.mp4) |
+| SAGE + Skip-Softmax | `dtype_qk=fp8_e4m3`, `q_block_size=1`, `k_block_size=16` | threshold 0.05; disabled until 0.97 | 43.867 s | **1.237x** | 0.3750 | [Video](/assets/figures/2026-08-29-minimax-h3-production-serving/evidence/b300/sage_fp8_skip_005_gate097.mp4) |
 
 SAGE supplies the larger speedup but changes this prompt's composition
-substantially; the conservative Skip-Softmax profile stays closer to dense.
-These are explicit quality-performance trade-offs. The
+substantially; the **conservative** Skip-Softmax profile stays closer to dense.
+Users can choose a higher threshold or enable Skip-Softmax for more denoising
+steps to trade quality for additional speed. The
 [TRTLLM attention guide](https://github.com/vllm-project/vllm-omni/blob/main/docs/user_guide/diffusion/attention_backends/trtllm.md)
-documents the controls. [Sol-Attn](https://github.com/vllm-project/vllm-omni/pull/5851)
-and [Cache-DiT](https://github.com/vllm-project/vllm-omni/pull/5853) are
-additional sparse/cache policies that require their own hit-rate, dense-guard,
-and quality evidence.
+documents the controls.
+
+#### Cache-DiT
+
+[Cache-DiT](https://github.com/vllm-project/vllm-omni/pull/5853) is a
+request-level cache policy rather than an attention backend. For H3,
+`quality=high` enables dynamic per-step reuse, while `quality=lossless`
+restores the reference path. Its hit/miss behavior is deployment-dependent, so
+it requires independent latency and quality qualification and is not included
+in the attention A/B above.
 
 ### 4.4 Compatibility boundaries
 
@@ -381,7 +396,7 @@ sharding rather than activating it per request.
   <img src="/assets/figures/2026-08-29-minimax-h3-production-serving/h3-few-step-adapters.svg" alt="Comparison of request-switchable Turbo LoRA and load-time-fused FastVideo FastH3" width="100%">
 </p>
 
-*Figure 6: Turbo leaves base weights unchanged and applies request-selected A/B
+*Figure 7: Turbo leaves base weights unchanged and applies request-selected A/B
 sidecars. FastH3 fuses low-rank and full-rank changes into a dedicated student
 before sharding. Sources: Turbo [#6476](https://github.com/vllm-project/vllm-omni/pull/6476),
 DLO support [#6550](https://github.com/vllm-project/vllm-omni/pull/6550), and
@@ -557,6 +572,9 @@ faster-than-playback complete-response generation on the measured B300 system.
 The remaining work follows directly from that progression:
 
 - integrate and qualify FastH3 VSA variants and native fused NVFP4 kernels;
+- integrate and qualify the [Sol-Attn](https://github.com/vllm-project/vllm-omni/pull/5851)
+  on-the-fly sparse-attention backend across target Blackwell platforms and
+  multi-seed workloads;
 - complete a matched base/FastH3 multi-seed quality evaluation;
 - implement the [chunkwise VAE-to-transport-to-MP4 pipeline](https://github.com/vllm-project/vllm-omni/issues/6872)
   and qualify a GPU encoder; and
