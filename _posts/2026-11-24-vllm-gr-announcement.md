@@ -162,4 +162,5 @@ We also thank the following teams and community members for contributing to vLLM
 - openPangu: [Xinming Han](https://github.com/Lechmere-1), [Zhiwei Yi](https://github.com/zhiweiyi11), [Mengyuan Ma](https://github.com/mengyuanuom), [Yongxiang Feng](https://github.com/fxy18)
 - TikTok-Global E-commerce: [Bin Wang](https://github.com/wangbin-cs), [Junye Long](https://github.com/LJHG)
 - Data-Arch-China Commerce and Advertising-ML Infra: [Haoran Ma](https://github.com/MaTwickenham), [Wenqiang Zhou](https://github.com/SENGEL-code), [Junwen Guo](https://github.com/CrazyKing5023)
+- NV-GR Team: [Shijie Liu](mailto:aleliu@nvidia.com)
 - LingQuAI: [Chunxu Jin](https://github.com/Trenx-J), [Wuping Liu](https://github.com/wupingL)
